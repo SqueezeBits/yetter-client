@@ -7,7 +7,6 @@ from .types import (
     ClientOptions,
     GenerateImageResponse,
     GetResponseRequest,
-    GetResponseResponse,
     GetResultOptions,
     GetResultResponse,
     GetStatusRequest,
@@ -23,14 +22,14 @@ def configure(api_key: str = None, api_endpoint: str = None):
     global _yetter_instance
     _yetter_instance.configure(api_key=api_key, endpoint=api_endpoint)
 
-async def run(model: str, args: Dict[str, Any]) -> GetResponseResponse:
+async def run(model: str, args: Dict[str, Any]) -> Dict[str, Any]:
     global _yetter_instance
     if not _yetter_instance._api_key:
         raise RuntimeError("You must call yetter.configure() before using yetter.run()")
     stream = await _yetter_instance.stream(model, args)
     return await stream.done()  # Wait for stream completion and return the final result
 
-async def subscribe(model: str, args: Dict[str, Any], on_queue_update: Optional[Callable[[GetStatusResponse], None]] = None) -> GetResponseResponse:
+async def subscribe(model: str, args: Dict[str, Any], on_queue_update: Optional[Callable[[GetStatusResponse], None]] = None) -> Dict[str, Any]:
     global _yetter_instance
     if not _yetter_instance._api_key:
         raise RuntimeError("You must call yetter.configure() before using yetter.subscribe()")
@@ -50,7 +49,6 @@ __all__ = [
     "CancelRequest",
     "CancelResponse",
     "GetResponseRequest",
-    "GetResponseResponse",
     "LogEntry",
     "GetResultOptions",
     "GetResultResponse",

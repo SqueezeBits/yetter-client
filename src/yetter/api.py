@@ -9,7 +9,6 @@ from .types import (
     ClientOptions,
     GenerateImageResponse,
     GetResponseRequest,
-    GetResponseResponse,
     GetStatusRequest,
     GetStatusResponse,
 )
@@ -89,6 +88,6 @@ class YetterImageClient:
         res = await self._request("PUT", body.url)
         return CancelResponse(**res.json())
 
-    async def get_response(self, body: GetResponseRequest) -> GetResponseResponse:
+    async def get_response(self, body: GetResponseRequest) -> Dict[str, Any]:
         res = await self._request("GET", body.url)
-        return GetResponseResponse(**res.json())
+        return res.json()

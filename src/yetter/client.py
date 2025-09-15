@@ -12,7 +12,6 @@ from .types import (
     ClientOptions,
     GenerateImageResponse,
     GetResponseRequest,
-    GetResponseResponse,
     GetResultOptions,
     GetResultResponse,
     GetStatusRequest,
@@ -40,7 +39,7 @@ class YetterStream:
         self._event_source: Optional[httpx.AsyncClient] = None
         self._stream_ended = False
         self._done_future = asyncio.Future()
-        self._final_response: Optional[GetResponseResponse] = None
+        self._final_response: Optional[Dict[str, Any]] = None
         self._stream_task: Optional[asyncio.Task] = None
         self._stream_consumed = False
 
@@ -78,7 +77,7 @@ class YetterStream:
             if not self._done_future.done():
                 self._done_future.set_exception(e)
 
-    async def done(self) -> GetResponseResponse:
+    async def done(self) -> Dict[str, Any]:
         """
         Returns the final response when the stream is completed.
         """
@@ -283,7 +282,7 @@ class yetter:
         model: str,
         args: Dict[str, Any],
         on_queue_update: Optional[Callable[[GetStatusResponse], None]] = None,
-    ) -> GetResponseResponse:
+    ) -> Dict[str, Any]:
         client = yetter._get_client()
         payload = {
             "model": model,

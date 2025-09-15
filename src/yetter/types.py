@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -54,17 +54,12 @@ class GetResponseRequest(BaseModel):
     url: str
 
 
-class GetResponseResponse(BaseModel):
-    images: Any
-    prompt: str
-
-
 class GetResultOptions(BaseModel):
     request_id: str = Field(..., alias="requestId")
 
 
 class GetResultResponse(BaseModel):
-    data: GetResponseResponse
+    data: Dict[str, Any]
     request_id: str = Field(..., alias="requestId")
 
 
