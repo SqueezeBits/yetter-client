@@ -53,7 +53,7 @@ async def main():
         "ytr-ai/qwen/image/t2i",
         args={"prompt": "A beautiful landscape with a river and mountains"},
     )
-    # result is GetResponseResponse(images=..., prompt=...)
+    # result is dict('images':..., 'prompt':...)
     print(result)
 
 asyncio.run(main())
@@ -91,3 +91,4 @@ asyncio.run(main())
 See the `examples/` directory:
 - `examples/run.py`: minimal one-shot run
 - `examples/subscribe.py`: subscription with updates
+
