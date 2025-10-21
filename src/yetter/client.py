@@ -20,7 +20,6 @@ from .types import (
     StatusResponse,
 )
 
-
 class YetterStream:
     def __init__(
         self,
@@ -48,9 +47,6 @@ class YetterStream:
 
     async def cancel(self) -> None:
         if not self._stream_ended:
-            self._stream_ended = True
-            if self._event_source:
-                await self._event_source.aclose()
             try:
                 await self._api_client.cancel(CancelRequest(url=self._cancel_url))
                 logging.debug(
@@ -59,10 +55,6 @@ class YetterStream:
             except Exception as e:
                 print(
                     f"Error cancelling underlying request for stream {self._request_id}: {e}"
-                )
-            if not self._done_future.done():
-                self._done_future.set_exception(
-                    RuntimeError("Stream was cancelled by user.")
                 )
 
     async def _consume_stream(self):
@@ -116,7 +108,7 @@ class YetterStream:
             self._stream_task = None
 
         if self._stream_ended:
-            if self._initial_response.status in ["COMPLETED", "FAILED"]:
+            if self._initial_response.status in ["COMPLETED", "ERROR", "CANCELLED"]:
                 status_like_initial = GetStatusResponse(
                     status=self._initial_response.status,
                     request_id=self._initial_response.request_id,
@@ -128,7 +120,8 @@ class YetterStream:
                 )
                 yield status_like_initial
                 return
-            return
+            elif self._initial_response.status in ["IN_QUEUE", "IN_PROGRESS"]:
+                self._stream_ended = False
 
         self._event_source = httpx.AsyncClient()
         try:
@@ -140,7 +133,7 @@ class YetterStream:
 
             # Replace the connect_sse usage with direct httpx streaming
             async with self._event_source.stream(
-                "GET", self._sse_stream_url, headers=headers
+                "GET", self._sse_stream_url, headers=headers, timeout=30 * 60.0
             ) as response:
                 async for line in response.aiter_lines():
                     if self._stream_ended:
@@ -155,71 +148,63 @@ class YetterStream:
                         status_update = await self._process_event_data(data)
                         yield status_update
 
-                        if status_update.status == "COMPLETED":
+                    elif line.startswith("event: "):
+                        event_type = line[6:].strip()
+                        if event_type == "data":
+                            continue
+                        elif event_type == "done":
                             self._stream_ended = True
-                            try:
-                                final_data = await self._api_client.get_response(
-                                    GetResponseRequest(url=self._response_url)
-                                )
-                                self._final_response = (
-                                    final_data
-                                )
-                                if not self._done_future.done():
-                                    self._done_future.set_result(final_data)
-                            except Exception as e:
-                                if not self._done_future.done():
-                                    self._done_future.set_exception(e)
-                            break
-                        elif status_update.status == "FAILED":
-                            self._stream_ended = True
-                            err_msg = f"Stream reported FAILED for {self._request_id}"
-                            if status_update.logs:
-                                err_msg = "\n".join(
-                                    [log.message for log in status_update.logs]
-                                )
                             if not self._done_future.done():
-                                self._done_future.set_exception(RuntimeError(err_msg))
+                                try:
+                                    logging.debug(
+                                        f"SSE 'done' event, checking final status for {self._request_id}"
+                                    )
+
+                                    # TODO: js-package updates lateset status by variable that is updated every stream event
+                                    # => python package get latest status from status-API
+                                    # => which method is more better?
+                                    current_status = await self._api_client.get_status(
+                                        GetStatusRequest(
+                                            url=self._initial_response.status_url
+                                        )
+                                    )
+                                    if current_status.status == "COMPLETED":
+                                        final_data = await self._api_client.get_response(
+                                            GetResponseRequest(url=self._response_url)
+                                        )
+                                        self._done_future.set_result(final_data)
+                                    elif current_status.status == "CANCELLED":
+                                        self._done_future.set_result("Stream was cancelled by user.")
+                                    elif current_status.status == "ERROR" | "IN_PROGRESS" | "IN_QUEUE":
+                                        self._done_future.set_exception(
+                                            RuntimeError(f"Stream ended: 'done' event, wrong final status {current_status.status}.")
+                                        )
+                                    else:
+                                        self._done_future.set_exception(
+                                            RuntimeError(f"Stream ended: 'done' event, unexpected final status {current_status.status}.")
+                                        )
+                                except Exception as e:
+                                    if not self._done_future.done():
+                                        self._done_future.set_exception(
+                                            RuntimeError(
+                                                f"Stream ended: 'done' event, error on final status check: {e}"
+                                            )
+                                        )
                             break
-                    elif line.startswith("event: done"):
-                        self._stream_ended = True
-                        if not self._done_future.done():
-                            try:
-                                logging.debug(
-                                    f"SSE 'done' event, checking final status for {self._request_id}"
+                        elif event_type == "error":
+                            self._stream_ended = True
+                            if not self._done_future.done():
+                                self._done_future.set_exception(
+                                    RuntimeError("Stream ended: 'error' event")
                                 )
-                                current_status = await self._api_client.get_status(
-                                    GetStatusRequest(
-                                        url=self._initial_response.status_url
-                                    )
+                            break
+                        else:
+                            self._stream_ended = True
+                            if not self._done_future.done():
+                                self._done_future.set_exception(
+                                    RuntimeError(f"Stream ended: 'done' event, unknown event type: {event_type}")
                                 )
-                                if current_status.status == "COMPLETED":
-                                    final_data = await self._api_client.get_response(
-                                        GetResponseRequest(url=self._response_url)
-                                    )
-                                    self._done_future.set_result(final_data)
-                                elif current_status.status == "FAILED":
-                                    err_msg = f"Stream ended: 'done' event, final status FAILED for {self._request_id}"
-                                    if current_status.logs:
-                                        err_msg = "\n".join(
-                                            [log.message for log in current_status.logs]
-                                        )
-                                    self._done_future.set_exception(
-                                        RuntimeError(err_msg)
-                                    )
-                                else:
-                                    self._done_future.set_exception(
-                                        RuntimeError(
-                                            f"Stream ended: 'done' event, final status {current_status.status}."
-                                        )
-                                    )
-                            except Exception as e:
-                                if not self._done_future.done():
-                                    self._done_future.set_exception(
-                                        RuntimeError(
-                                            f"Stream ended: 'done' event, error on final status check: {e}"
-                                        )
-                                    )
-                        break
+                            break
         except httpx.RequestError as e:
             logging.debug(f"SSE connection error for {self._request_id}: {e}")
             if not self._done_future.done():
@@ -294,7 +279,7 @@ class yetter:
         start_time = asyncio.get_event_loop().time()
         timeout_seconds = 30 * 60
 
-        while status not in ["COMPLETED", "FAILED"]:
+        while status not in ["COMPLETED", "ERROR", "CANCELLED"]:
             if (asyncio.get_event_loop().time() - start_time) > timeout_seconds:
                 logging.debug(
                     f"Subscription timed out for {generate_response.request_id}. Attempting cancel."
@@ -331,7 +316,7 @@ class yetter:
                 )
                 raise
 
-        if status == "FAILED":
+        if status == "ERROR":
             err_msg = "Image generation failed."
             if last_status_response and last_status_response.logs:
                 err_msg = "\n".join([log.message for log in last_status_response.logs])
@@ -379,7 +364,7 @@ class yetter:
         initial_api_response = await client.generate_image(payload)
         stream_wrapper = YetterStream(client, model, initial_api_response, args)
 
-        if initial_api_response.status in ["COMPLETED", "FAILED"]:
+        if initial_api_response.status in ["COMPLETED", "ERROR", "CANCELLED"]:
             stream_wrapper._stream_ended = True
             if initial_api_response.status == "COMPLETED":
                 if not stream_wrapper._done_future.done():
@@ -391,8 +376,12 @@ class yetter:
                     except Exception as e:
                         if not stream_wrapper._done_future.done():
                             stream_wrapper._done_future.set_exception(e)
-            elif initial_api_response.status == "FAILED":
+            elif initial_api_response.status == "ERROR":
                 err_msg = f"Stream creation failed: {initial_api_response.request_id} reported FAILED initially."
+                if not stream_wrapper._done_future.done():
+                    stream_wrapper._done_future.set_exception(RuntimeError(err_msg))
+            elif initial_api_response.status == "CANCELLED":
+                err_msg = f"Stream creation failed: {initial_api_response.request_id} reported CANCELLED initially."
                 if not stream_wrapper._done_future.done():
                     stream_wrapper._done_future.set_exception(RuntimeError(err_msg))
         else:

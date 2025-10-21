@@ -35,6 +35,12 @@ async def subscribe(model: str, args: Dict[str, Any], on_queue_update: Optional[
         raise RuntimeError("You must call yetter.configure() before using yetter.subscribe()")
     return await _yetter_instance.subscribe(model, args, on_queue_update)
 
+async def stream(model: str, args: Dict[str, Any]) -> YetterStream:
+    global _yetter_instance
+    if not _yetter_instance._api_key:
+        raise RuntimeError("You must call yetter.configure() before using yetter.stream()")
+    return await _yetter_instance.stream(model, args)
+
 # Export everything needed for the public API
 __all__ = [
     "configure",
