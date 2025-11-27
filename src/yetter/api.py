@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
@@ -9,8 +9,11 @@ from .types import (
     ClientOptions,
     GenerateImageResponse,
     GetResponseRequest,
+    GetSchemeRequest,
     GetStatusRequest,
     GetStatusResponse,
+    GetUploadUrlRequest,
+    UploadCompleteRequest,
 )
 
 
@@ -20,9 +23,13 @@ class YetterImageClient:
             raise ValueError("`api_key` is required")
         self.api_key = options.api_key
         self.endpoint = options.endpoint or "https://api.yetter.ai"
+        self.backend = options.backend or "https://app.yetter.ai"
 
     def get_api_endpoint(self) -> str:
         return self.endpoint
+
+    def get_backend(self) -> str:
+        return self.backend
 
     def configure(self, options: ClientOptions) -> None:
         if options.api_key:
@@ -90,4 +97,16 @@ class YetterImageClient:
 
     async def get_response(self, body: GetResponseRequest) -> Dict[str, Any]:
         res = await self._request("GET", body.url)
+        return res.json()
+
+    async def get_scheme(self, body: GetSchemeRequest) -> Dict[str, Any]:
+        res = await self._request("GET", f"{self.backend}/model/{body.app_id}")
+        return res.json()
+
+    async def get_upload_url(self, body: GetUploadUrlRequest) -> Dict[str, Any]:
+        res = await self._request("POST", f"{self.endpoint}/uploads", json_data=body.model_dump())
+        return res.json()
+
+    async def upload_complete(self, body: UploadCompleteRequest) -> Dict[str, Any]:
+        res = await self._request("POST", f"{self.endpoint}/uploads/complete", json_data=body.model_dump())
         return res.json()

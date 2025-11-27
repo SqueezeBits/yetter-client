@@ -41,6 +41,14 @@ async def stream(model: str, args: Dict[str, Any]) -> YetterStream:
         raise RuntimeError("You must call yetter.configure() before using yetter.stream()")
     return await _yetter_instance.stream(model, args)
 
+async def get_scheme(app_id: str) -> Dict[str, Any]:
+    global _yetter_instance
+    return await _yetter_instance.get_scheme(app_id)
+
+async def upload_file(file_name: str) -> Dict[str, Any]:
+    global _yetter_instance
+    return await _yetter_instance.upload_file(file_name)
+
 # Export everything needed for the public API
 __all__ = [
     "configure",

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class ClientOptions(BaseModel):
     api_key: Optional[str] = None
     endpoint: Optional[str] = None
+    backend: Optional[str] = None
 
 
 class GenerateImageResponse(BaseModel):
@@ -70,3 +71,17 @@ class StatusOptions(BaseModel):
 class StatusResponse(BaseModel):
     data: GetStatusResponse
     request_id: str = Field(..., alias="requestId")
+
+
+class GetSchemeRequest(BaseModel):
+    app_id: str
+
+
+class GetUploadUrlRequest(BaseModel):
+    file_name: str
+    content_type: Optional[str] = None
+    size: int
+
+
+class UploadCompleteRequest(BaseModel):
+    key: str

@@ -1,10 +1,12 @@
 import asyncio
 import json
 import logging
+import mimetypes
 import os
 from typing import Any, AsyncIterable, Callable, Dict, Optional
 
 import httpx
+import requests
 
 from .api import YetterImageClient
 from .types import (
@@ -14,10 +16,13 @@ from .types import (
     GetResponseRequest,
     GetResultOptions,
     GetResultResponse,
+    GetSchemeRequest,
     GetStatusRequest,
     GetStatusResponse,
+    GetUploadUrlRequest,
     StatusOptions,
     StatusResponse,
+    UploadCompleteRequest,
 )
 
 class YetterStream:
@@ -154,6 +159,24 @@ class YetterStream:
                             continue
                         elif event_type == "done":
                             self._stream_ended = True
+                            try:
+                                final_data = await self._api_client.get_response(
+                                    GetResponseRequest(url=self._response_url)
+                                )
+                                self._final_response = final_data
+                                if not self._done_future.done():
+                                    self._done_future.set_result(final_data)
+                            except Exception as e:
+                                if not self._done_future.done():
+                                    self._done_future.set_exception(e)
+                            break
+                        elif status_update.status == "FAILED":
+                            self._stream_ended = True
+                            err_msg = f"Stream reported FAILED for {self._request_id}"
+                            if status_update.logs:
+                                err_msg = "\n".join(
+                                    [log.message for log in status_update.logs]
+                                )
                             if not self._done_future.done():
                                 try:
                                     logging.debug(
@@ -390,3 +413,65 @@ class yetter:
             )
 
         return stream_wrapper
+
+    @staticmethod
+    async def get_scheme(app_id: str) -> Dict[str, Any]:
+        client = yetter._get_client()
+        return await client.get_scheme(GetSchemeRequest(app_id=app_id))
+
+    @staticmethod
+    async def upload_file(file_name: str) -> Dict[str, Any]:
+        client = yetter._get_client()
+        file_size = os.path.getsize(file_name)
+        file_type = mimetypes.guess_type(file_name)[0]
+        file_size = 12 * 1024 * 1024
+        upload_url_response = await client.get_upload_url(
+            GetUploadUrlRequest(
+                file_name=file_name, content_type=file_type, size=file_size
+            )
+        )
+        if upload_url_response["mode"] == "single":
+            # Singlepart upload
+            with open(file_name, "rb") as file:
+                requests.put(
+                    upload_url_response["put_url"],
+                    data=file,
+                    headers={"Content-Type": file_type},
+                )
+        else:
+            # Multipart upload
+            part_size: int = int(upload_url_response.get("part_size", 0))
+            part_urls = upload_url_response.get("part_urls", [])
+            if not part_size or not part_urls:
+                raise ValueError("Invalid multipart upload response: missing part_size or part_urls")
+
+            # Ensure parts are uploaded in order of part_number
+            sorted_parts = sorted(part_urls, key=lambda p: int(p.get("part_number", 0)))
+
+            with open(file_name, "rb") as f:
+                for part in sorted_parts:
+                    url = part.get("url")
+                    part_number = int(part.get("part_number"))
+                    if not url or not part_number:
+                        raise ValueError("Invalid multipart part entry: missing url or part_number")
+
+                    # Read the next chunk
+                    chunk = f.read(part_size)
+                    if chunk is None or len(chunk) == 0:
+                        break
+
+                    resp = requests.put(
+                        url,
+                        data=chunk,
+                        headers={
+                            # S3 part upload typically requires Content-Length; avoid Content-Type here
+                            "Content-Length": str(len(chunk)),
+                        },
+                    )
+                    if not (200 <= resp.status_code < 300):
+                        raise RuntimeError(f"Multipart upload failed at part {part_number}: {resp.status_code} {resp.text}")
+        upload_done_response = await client.upload_complete(
+            UploadCompleteRequest(key=upload_url_response["key"])
+        )
+
+        return upload_done_response
