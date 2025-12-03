@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import mimetypes
 import os
 from typing import Any, AsyncIterable, Callable, Dict, Optional
 
@@ -16,8 +17,11 @@ from .types import (
     GetResultResponse,
     GetStatusRequest,
     GetStatusResponse,
+    GetUploadUrlRequest,
     StatusOptions,
     StatusResponse,
+    UploadCompleteRequest,
+    UploadCompleteResponse,
 )
 
 class YetterStream:
@@ -390,3 +394,172 @@ class yetter:
             )
 
         return stream_wrapper
+
+    @staticmethod
+    async def upload_file(
+        file_path: str,
+        on_progress: Optional[Callable[[int], None]] = None,
+    ) -> UploadCompleteResponse:
+        """
+        Upload a file using presigned URLs.
+
+        Supports automatic single-part upload for small files and multipart
+        upload for large files. The mode is determined by the server response.
+
+        Args:
+            file_path: Path to the file to upload
+            on_progress: Optional callback function that receives progress (0-100)
+
+        Returns:
+            UploadCompleteResponse containing the public URL and metadata
+
+        Raises:
+            FileNotFoundError: If the file does not exist
+            RuntimeError: If upload fails
+            ValueError: If API key is not configured
+
+        Example:
+            ```python
+            result = await yetter.upload_file(
+                "./image.jpg",
+                on_progress=lambda pct: print(f"Upload: {pct}%")
+            )
+            print(f"Uploaded: {result.url}")
+            ```
+        """
+        if not yetter._api_key:
+            raise ValueError(
+                "API key not configured. Call yetter.configure() or set YTR_API_KEY."
+            )
+
+        # Validate file exists
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        # Get file metadata
+        file_size = os.path.getsize(file_path)
+        file_name = os.path.basename(file_path)
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type is None:
+            mime_type = "application/octet-stream"
+
+        client = yetter._get_client()
+
+        # Step 1: Request presigned URL(s)
+        upload_url_response = await client.get_upload_url(
+            GetUploadUrlRequest(
+                file_name=file_name,
+                content_type=mime_type,
+                size=file_size,
+            )
+        )
+
+        # Step 2: Upload file content
+        if upload_url_response.get("mode") == "single":
+            await yetter._upload_single(
+                file_path,
+                upload_url_response["put_url"],
+                mime_type,
+                file_size,
+                on_progress,
+            )
+        else:
+            await yetter._upload_multipart(
+                file_path,
+                upload_url_response.get("part_urls", []),
+                upload_url_response.get("part_size", 0),
+                file_size,
+                on_progress,
+            )
+
+        # Step 3: Notify completion
+        complete_response = await client.upload_complete(
+            UploadCompleteRequest(key=upload_url_response["key"])
+        )
+
+        if on_progress:
+            on_progress(100)
+
+        return UploadCompleteResponse(**complete_response)
+
+    @staticmethod
+    async def _upload_single(
+        file_path: str,
+        presigned_url: str,
+        content_type: str,
+        total_size: int,
+        on_progress: Optional[Callable[[int], None]],
+    ) -> None:
+        """Upload file using single PUT request."""
+        async with httpx.AsyncClient() as client:
+            with open(file_path, "rb") as f:
+                file_data = f.read()
+
+            response = await client.put(
+                presigned_url,
+                content=file_data,
+                headers={
+                    "Content-Type": content_type,
+                    "Content-Length": str(total_size),
+                },
+            )
+
+            if not response.is_success:
+                raise RuntimeError(
+                    f"Single-part upload failed ({response.status_code}): {response.text}"
+                )
+
+        if on_progress:
+            on_progress(90)
+
+    @staticmethod
+    async def _upload_multipart(
+        file_path: str,
+        part_urls: list,
+        part_size: int,
+        total_size: int,
+        on_progress: Optional[Callable[[int], None]],
+    ) -> None:
+        """Upload file using multipart upload."""
+        if not part_urls or not part_size:
+            raise ValueError(
+                "Invalid multipart upload response: missing part_size or part_urls"
+            )
+
+        # Sort parts by part_number
+        sorted_parts = sorted(part_urls, key=lambda p: int(p.get("part_number", 0)))
+
+        async with httpx.AsyncClient() as client:
+            with open(file_path, "rb") as f:
+                for i, part in enumerate(sorted_parts):
+                    url = part.get("url")
+                    part_number = int(part.get("part_number", 0))
+
+                    if not url or not part_number:
+                        raise ValueError(
+                            "Invalid multipart part entry: missing url or part_number"
+                        )
+
+                    # Read chunk
+                    chunk = f.read(part_size)
+                    if not chunk:
+                        break
+
+                    response = await client.put(
+                        url,
+                        content=chunk,
+                        headers={
+                            "Content-Length": str(len(chunk)),
+                        },
+                    )
+
+                    if not response.is_success:
+                        raise RuntimeError(
+                            f"Multipart upload failed at part {part_number} "
+                            f"({response.status_code}): {response.text}"
+                        )
+
+                    # Update progress
+                    if on_progress:
+                        progress = min(90, int(((i + 1) / len(sorted_parts)) * 90))
+                        on_progress(progress)

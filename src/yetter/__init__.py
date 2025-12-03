@@ -11,8 +11,12 @@ from .types import (
     GetResultResponse,
     GetStatusRequest,
     GetStatusResponse,
+    GetUploadUrlRequest,
+    GetUploadUrlResponse,
     StatusOptions,
     StatusResponse,
+    UploadCompleteRequest,
+    UploadCompleteResponse,
 )
 
 # Create the default instance
@@ -41,11 +45,52 @@ async def stream(model: str, args: Dict[str, Any]) -> YetterStream:
         raise RuntimeError("You must call yetter.configure() before using yetter.stream()")
     return await _yetter_instance.stream(model, args)
 
+
+async def upload_file(
+    file_path: str,
+    on_progress: Optional[Callable[[int], None]] = None,
+) -> UploadCompleteResponse:
+    """
+    Upload a file using presigned URLs.
+
+    Supports automatic single-part upload for small files and multipart
+    upload for large files. The mode is determined by the server response.
+
+    Args:
+        file_path: Path to the file to upload
+        on_progress: Optional callback function that receives progress (0-100)
+
+    Returns:
+        UploadCompleteResponse containing the public URL and metadata
+
+    Raises:
+        FileNotFoundError: If the file does not exist
+        RuntimeError: If upload fails or API key is not configured
+
+    Example:
+        ```python
+        import yetter
+        yetter.configure(api_key="your_api_key")
+        result = await yetter.upload_file(
+            "./image.jpg",
+            on_progress=lambda pct: print(f"Upload: {pct}%")
+        )
+        print(f"Uploaded: {result.url}")
+        ```
+    """
+    global _yetter_instance
+    if not _yetter_instance._api_key:
+        raise RuntimeError("You must call yetter.configure() before using yetter.upload_file()")
+    return await yetter.upload_file(file_path, on_progress)
+
+
 # Export everything needed for the public API
 __all__ = [
     "configure",
     "run",
     "subscribe",
+    "stream",
+    "upload_file",
     "YetterImageClient",
     "YetterStream",
     "ClientOptions",
@@ -60,4 +105,9 @@ __all__ = [
     "GetResultResponse",
     "StatusOptions",
     "StatusResponse",
+    # Upload-related exports
+    "GetUploadUrlRequest",
+    "GetUploadUrlResponse",
+    "UploadCompleteRequest",
+    "UploadCompleteResponse",
 ]

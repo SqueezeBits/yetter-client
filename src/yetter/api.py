@@ -11,6 +11,8 @@ from .types import (
     GetResponseRequest,
     GetStatusRequest,
     GetStatusResponse,
+    GetUploadUrlRequest,
+    UploadCompleteRequest,
 )
 
 
@@ -20,9 +22,13 @@ class YetterImageClient:
             raise ValueError("`api_key` is required")
         self.api_key = options.api_key
         self.endpoint = options.endpoint or "https://api.yetter.ai"
+        self.backend = options.backend or "https://app.yetter.ai"
 
     def get_api_endpoint(self) -> str:
         return self.endpoint
+
+    def get_backend(self) -> str:
+        return self.backend
 
     def configure(self, options: ClientOptions) -> None:
         if options.api_key:
@@ -90,4 +96,38 @@ class YetterImageClient:
 
     async def get_response(self, body: GetResponseRequest) -> Dict[str, Any]:
         res = await self._request("GET", body.url)
+        return res.json()
+
+    async def get_upload_url(self, body: GetUploadUrlRequest) -> Dict[str, Any]:
+        """
+        Request presigned URL(s) for file upload.
+
+        Args:
+            body: Upload request containing file_name, content_type, and size
+
+        Returns:
+            Dict containing mode, key, put_url (single) or part_urls (multipart)
+        """
+        res = await self._request(
+            "POST",
+            f"{self.endpoint}/uploads",
+            json_data=body.model_dump()
+        )
+        return res.json()
+
+    async def upload_complete(self, body: UploadCompleteRequest) -> Dict[str, Any]:
+        """
+        Notify server that upload is complete.
+
+        Args:
+            body: Completion request containing the S3 key
+
+        Returns:
+            Dict containing the public URL and metadata
+        """
+        res = await self._request(
+            "POST",
+            f"{self.endpoint}/uploads/complete",
+            json_data=body.model_dump()
+        )
         return res.json()
