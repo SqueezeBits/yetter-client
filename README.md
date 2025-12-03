@@ -86,6 +86,39 @@ async def main():
 asyncio.run(main())
 ```
 
+### File Upload
+
+Upload files to Yetter using presigned URLs. Supports both single-part upload for small files and automatic multipart upload for large files.
+
+```python
+import asyncio
+import yetter
+
+async def main():
+    yetter.configure(api_key="YOUR_API_KEY")
+
+    # Simple upload
+    result = await yetter.upload_file("./my_image.jpg")
+    print(f"Uploaded: {result.url}")
+
+    # Upload with progress tracking
+    def on_progress(percent: int):
+        print(f"Upload progress: {percent}%")
+
+    result = await yetter.upload_file(
+        "./large_file.png",
+        on_progress=on_progress,
+    )
+    print(f"Uploaded: {result.url}")
+
+asyncio.run(main())
+```
+
+The `upload_file` function returns an `UploadCompleteResponse` containing:
+- `url`: Public URL to access the uploaded file
+- `key`: S3 object key for reference
+- `metadata`: Optional metadata (size, content_type, uploaded_at)
+
 ### Examples
 
 See the `examples/` directory:

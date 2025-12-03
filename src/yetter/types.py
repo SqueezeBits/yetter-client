@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class ClientOptions(BaseModel):
     api_key: Optional[str] = None
     endpoint: Optional[str] = None
+    backend: Optional[str] = None  # For upload coordination
 
 
 class GenerateImageResponse(BaseModel):
@@ -70,3 +71,34 @@ class StatusOptions(BaseModel):
 class StatusResponse(BaseModel):
     data: GetStatusResponse
     request_id: str = Field(..., alias="requestId")
+
+
+# ============= Upload-Related Types =============
+
+
+class GetUploadUrlRequest(BaseModel):
+    """Request to get presigned upload URL(s)"""
+    file_name: str
+    content_type: Optional[str] = None
+    size: int
+
+
+class GetUploadUrlResponse(BaseModel):
+    """Response containing presigned URL(s) for upload"""
+    mode: str  # "single" or "multipart"
+    key: str  # S3 object key for tracking
+    put_url: Optional[str] = None  # Presigned PUT URL (single mode only)
+    part_size: Optional[int] = None  # Size of each part in bytes (multipart mode only)
+    part_urls: Optional[List[Dict[str, Any]]] = None  # Array of part URLs with part numbers
+
+
+class UploadCompleteRequest(BaseModel):
+    """Request to notify upload completion"""
+    key: str  # S3 object key from GetUploadUrlResponse
+
+
+class UploadCompleteResponse(BaseModel):
+    """Response after successful upload completion"""
+    url: str  # Public URL to access the uploaded file
+    key: str  # S3 object key
+    metadata: Optional[Dict[str, Any]] = None  # Optional metadata (size, content_type, uploaded_at)
