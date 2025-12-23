@@ -11,6 +11,9 @@ from .types import (
     GetResponseRequest,
     GetStatusRequest,
     GetStatusResponse,
+    GetUploadUrlRequest,
+    GetUploadUrlResponse,
+    UploadCompleteRequest,
 )
 
 
@@ -90,4 +93,38 @@ class YetterImageClient:
 
     async def get_response(self, body: GetResponseRequest) -> Dict[str, Any]:
         res = await self._request("GET", body.url)
+        return res.json()
+
+    async def get_upload_url(self, body: GetUploadUrlRequest) -> GetUploadUrlResponse:
+        """
+        Request presigned URL(s) for file upload.
+
+        Args:
+            body: Upload request containing file_name, content_type, and size
+
+        Returns:
+            GetUploadUrlResponse containing mode, key, put_url (single) or part_urls (multipart)
+        """
+        res = await self._request(
+            "POST",
+            f"{self.endpoint}/uploads",
+            json_data=body.model_dump()
+        )
+        return GetUploadUrlResponse(**res.json())
+
+    async def upload_complete(self, body: UploadCompleteRequest) -> Dict[str, Any]:
+        """
+        Notify server that upload is complete.
+
+        Args:
+            body: Completion request containing the S3 key
+
+        Returns:
+            Dict containing the public URL and metadata
+        """
+        res = await self._request(
+            "POST",
+            f"{self.endpoint}/uploads/complete",
+            json_data=body.model_dump()
+        )
         return res.json()
