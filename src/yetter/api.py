@@ -22,13 +22,9 @@ class YetterImageClient:
             raise ValueError("`api_key` is required")
         self.api_key = options.api_key
         self.endpoint = options.endpoint or "https://api.yetter.ai"
-        self.backend = options.backend or "https://app.yetter.ai"
 
     def get_api_endpoint(self) -> str:
         return self.endpoint
-
-    def get_backend(self) -> str:
-        return self.backend
 
     def configure(self, options: ClientOptions) -> None:
         if options.api_key:

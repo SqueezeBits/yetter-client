@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 class ClientOptions(BaseModel):
     api_key: Optional[str] = None
     endpoint: Optional[str] = None
-    backend: Optional[str] = None  # For upload coordination
 
 
 class GenerateImageResponse(BaseModel):
@@ -99,6 +98,6 @@ class UploadCompleteRequest(BaseModel):
 
 class UploadCompleteResponse(BaseModel):
     """Response after successful upload completion"""
+    message: Optional[str] = None
     url: str  # Public URL to access the uploaded file
-    key: str  # S3 object key
     metadata: Optional[Dict[str, Any]] = None  # Optional metadata (size, content_type, uploaded_at)
