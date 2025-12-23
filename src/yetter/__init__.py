@@ -13,6 +13,7 @@ from .types import (
     GetStatusResponse,
     GetUploadUrlRequest,
     GetUploadUrlResponse,
+    LogEntry,
     StatusOptions,
     StatusResponse,
     UploadCompleteRequest,

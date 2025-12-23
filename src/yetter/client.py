@@ -455,10 +455,10 @@ class yetter:
         )
 
         # Step 2: Upload file content
-        if upload_url_response.get("mode") == "single":
+        if upload_url_response.mode == "single":
             await yetter._upload_single(
                 file_path,
-                upload_url_response["put_url"],
+                upload_url_response.put_url,
                 mime_type,
                 file_size,
                 on_progress,
@@ -466,15 +466,15 @@ class yetter:
         else:
             await yetter._upload_multipart(
                 file_path,
-                upload_url_response.get("part_urls", []),
-                upload_url_response.get("part_size", 0),
+                upload_url_response.part_urls or [],
+                upload_url_response.part_size or 0,
                 file_size,
                 on_progress,
             )
 
         # Step 3: Notify completion
         complete_response = await client.upload_complete(
-            UploadCompleteRequest(key=upload_url_response["key"])
+            UploadCompleteRequest(key=upload_url_response.key)
         )
 
         if on_progress:

@@ -12,6 +12,7 @@ from .types import (
     GetStatusRequest,
     GetStatusResponse,
     GetUploadUrlRequest,
+    GetUploadUrlResponse,
     UploadCompleteRequest,
 )
 
@@ -94,7 +95,7 @@ class YetterImageClient:
         res = await self._request("GET", body.url)
         return res.json()
 
-    async def get_upload_url(self, body: GetUploadUrlRequest) -> Dict[str, Any]:
+    async def get_upload_url(self, body: GetUploadUrlRequest) -> GetUploadUrlResponse:
         """
         Request presigned URL(s) for file upload.
 
@@ -102,14 +103,14 @@ class YetterImageClient:
             body: Upload request containing file_name, content_type, and size
 
         Returns:
-            Dict containing mode, key, put_url (single) or part_urls (multipart)
+            GetUploadUrlResponse containing mode, key, put_url (single) or part_urls (multipart)
         """
         res = await self._request(
             "POST",
             f"{self.endpoint}/uploads",
             json_data=body.model_dump()
         )
-        return res.json()
+        return GetUploadUrlResponse(**res.json())
 
     async def upload_complete(self, body: UploadCompleteRequest) -> Dict[str, Any]:
         """
