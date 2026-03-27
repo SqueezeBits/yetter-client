@@ -23,6 +23,7 @@ class YetterImageClient:
             raise ValueError("`api_key` is required")
         self.api_key = options.api_key
         self.endpoint = options.endpoint or "https://api.yetter.ai"
+        self._http_client: Optional[httpx.AsyncClient] = None
 
     def get_api_endpoint(self) -> str:
         return self.endpoint
@@ -35,6 +36,16 @@ class YetterImageClient:
         if options.endpoint:
             self.endpoint = options.endpoint
 
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(timeout=30 * 60.0)
+        return self._http_client
+
+    async def close(self) -> None:
+        if self._http_client and not self._http_client.is_closed:
+            await self._http_client.aclose()
+            self._http_client = None
+
     async def _request(
         self,
         method: str,
@@ -46,10 +57,10 @@ class YetterImageClient:
             "Content-Type": "application/json",
             "Authorization": f"{self.api_key}",
         }
-        async with httpx.AsyncClient() as client:
-            res = await client.request(
-                method, url, json=json_data, headers=headers, params=params
-            )
+        client = self._get_http_client()
+        res = await client.request(
+            method, url, json=json_data, headers=headers, params=params
+        )
 
         if not res.is_success:
             try:
