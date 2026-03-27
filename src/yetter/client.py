@@ -210,6 +210,7 @@ class YetterStream:
 class yetter:
     _api_key = None
     _endpoint = "https://api.yetter.ai"
+    _cached_client: Optional[YetterImageClient] = None
 
     def __init__(self):
         api_key = os.environ.get("YTR_API_KEY", "")
@@ -232,6 +233,7 @@ class yetter:
                 yetter._api_key = "Key " + api_key
         if endpoint:
             yetter._endpoint = endpoint
+        yetter._cached_client = None
 
     @staticmethod
     def _get_client() -> YetterImageClient:
@@ -239,9 +241,11 @@ class yetter:
             raise ValueError(
                 "API key not configured. Call yetter.configure() or set YTR_API_KEY."
             )
-        return YetterImageClient(
-            ClientOptions(api_key=yetter._api_key, endpoint=yetter._endpoint)
-        )
+        if yetter._cached_client is None:
+            yetter._cached_client = YetterImageClient(
+                ClientOptions(api_key=yetter._api_key, endpoint=yetter._endpoint)
+            )
+        return yetter._cached_client
 
     @staticmethod
     async def subscribe(
