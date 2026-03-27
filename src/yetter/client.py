@@ -127,7 +127,7 @@ class YetterStream:
             elif self._initial_response.status in ["IN_QUEUE", "IN_PROGRESS"]:
                 self._stream_ended = False
 
-        self._event_source = httpx.AsyncClient()
+        self._event_source = self._api_client._get_http_client()
         try:
             headers = {
                 "Authorization": f"{self._api_client.api_key}",
@@ -135,7 +135,6 @@ class YetterStream:
             }
             logging.debug(f"Connecting to SSE: {self._sse_stream_url}")
 
-            # Replace the connect_sse usage with direct httpx streaming
             async with self._event_source.stream(
                 "GET", self._sse_stream_url, headers=headers, timeout=30 * 60.0
             ) as response:
@@ -161,37 +160,17 @@ class YetterStream:
                             if not self._done_future.done():
                                 try:
                                     logging.debug(
-                                        f"SSE 'done' event, checking final status for {self._request_id}"
+                                        f"SSE 'done' event for {self._request_id}, fetching response directly"
                                     )
-
-                                    # TODO: js-package updates lateset status by variable that is updated every stream event
-                                    # => python package get latest status from status-API
-                                    # => which method is more better?
-                                    current_status = await self._api_client.get_status(
-                                        GetStatusRequest(
-                                            url=self._initial_response.status_url
-                                        )
+                                    final_data = await self._api_client.get_response(
+                                        GetResponseRequest(url=self._response_url)
                                     )
-                                    if current_status.status == "COMPLETED":
-                                        final_data = await self._api_client.get_response(
-                                            GetResponseRequest(url=self._response_url)
-                                        )
-                                        self._done_future.set_result(final_data)
-                                    elif current_status.status == "CANCELLED":
-                                        self._done_future.set_result("Stream was cancelled by user.")
-                                    elif current_status.status == "ERROR" | "IN_PROGRESS" | "IN_QUEUE":
-                                        self._done_future.set_exception(
-                                            RuntimeError(f"Stream ended: 'done' event, wrong final status {current_status.status}.")
-                                        )
-                                    else:
-                                        self._done_future.set_exception(
-                                            RuntimeError(f"Stream ended: 'done' event, unexpected final status {current_status.status}.")
-                                        )
+                                    self._done_future.set_result(final_data)
                                 except Exception as e:
                                     if not self._done_future.done():
                                         self._done_future.set_exception(
                                             RuntimeError(
-                                                f"Stream ended: 'done' event, error on final status check: {e}"
+                                                f"Stream ended: 'done' event, error fetching response: {e}"
                                             )
                                         )
                             break
@@ -222,8 +201,6 @@ class YetterStream:
                 self._done_future.set_exception(e)
         finally:
             self._stream_ended = True
-            if self._event_source:
-                await self._event_source.aclose()
             if not self._done_future.done():
                 self._done_future.set_exception(
                     RuntimeError("Stream closed unexpectedly or prematurely.")
@@ -233,6 +210,7 @@ class YetterStream:
 class yetter:
     _api_key = None
     _endpoint = "https://api.yetter.ai"
+    _cached_client: Optional[YetterImageClient] = None
 
     def __init__(self):
         api_key = os.environ.get("YTR_API_KEY", "")
@@ -255,6 +233,7 @@ class yetter:
                 yetter._api_key = "Key " + api_key
         if endpoint:
             yetter._endpoint = endpoint
+        yetter._cached_client = None
 
     @staticmethod
     def _get_client() -> YetterImageClient:
@@ -262,9 +241,11 @@ class yetter:
             raise ValueError(
                 "API key not configured. Call yetter.configure() or set YTR_API_KEY."
             )
-        return YetterImageClient(
-            ClientOptions(api_key=yetter._api_key, endpoint=yetter._endpoint)
-        )
+        if yetter._cached_client is None:
+            yetter._cached_client = YetterImageClient(
+                ClientOptions(api_key=yetter._api_key, endpoint=yetter._endpoint)
+            )
+        return yetter._cached_client
 
     @staticmethod
     async def subscribe(
