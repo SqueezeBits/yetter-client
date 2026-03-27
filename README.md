@@ -125,3 +125,16 @@ See the `examples/` directory:
 - `examples/run.py`: minimal one-shot run
 - `examples/subscribe.py`: subscription with updates
 
+### Development Notes
+
+When contributing to this repository, use TDD by default:
+
+- add or update a failing test first
+- implement the smallest change that makes it pass
+- refactor only after the test suite is green again
+
+Recommended local test command:
+
+```bash
+uv run --extra dev pytest -q
+```

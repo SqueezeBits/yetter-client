@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional, Dict, Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -24,6 +25,7 @@ class YetterImageClient:
         self.api_key = options.api_key
         self.endpoint = options.endpoint or "https://api.yetter.ai"
         self._http_client: Optional[httpx.AsyncClient] = None
+        self._http_client_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def get_api_endpoint(self) -> str:
         return self.endpoint
@@ -36,15 +38,27 @@ class YetterImageClient:
         if options.endpoint:
             self.endpoint = options.endpoint
 
-    def _get_http_client(self) -> httpx.AsyncClient:
-        if self._http_client is None or self._http_client.is_closed:
+    async def _get_http_client(self) -> httpx.AsyncClient:
+        current_loop = asyncio.get_running_loop()
+        if self._should_refresh_http_client(current_loop):
+            await self.close()
             self._http_client = httpx.AsyncClient(timeout=30 * 60.0)
+            self._http_client_loop = current_loop
         return self._http_client
+
+    def _should_refresh_http_client(
+        self,
+        current_loop: asyncio.AbstractEventLoop,
+    ) -> bool:
+        if self._http_client is None or self._http_client.is_closed:
+            return True
+        return self._http_client_loop is not current_loop
 
     async def close(self) -> None:
         if self._http_client and not self._http_client.is_closed:
             await self._http_client.aclose()
-            self._http_client = None
+        self._http_client = None
+        self._http_client_loop = None
 
     async def _request(
         self,
@@ -57,7 +71,7 @@ class YetterImageClient:
             "Content-Type": "application/json",
             "Authorization": f"{self.api_key}",
         }
-        client = self._get_http_client()
+        client = await self._get_http_client()
         res = await client.request(
             method, url, json=json_data, headers=headers, params=params
         )
@@ -82,9 +96,7 @@ class YetterImageClient:
                 "GenerateImageRequest must include a non-empty 'model' key"
             )
         url = f"{self.endpoint}/{model}"
-        res = await self._request(
-            "POST", url, json_data=body
-        )
+        res = await self._request("POST", url, json_data=body)
         return GenerateImageResponse(**res.json())
 
     async def get_status(self, body: GetStatusRequest) -> GetStatusResponse:
@@ -119,7 +131,7 @@ class YetterImageClient:
         res = await self._request(
             "POST",
             f"{self.endpoint}/uploads",
-            json_data=body.model_dump()
+            json_data=body.model_dump(),
         )
         return GetUploadUrlResponse(**res.json())
 
@@ -136,6 +148,6 @@ class YetterImageClient:
         res = await self._request(
             "POST",
             f"{self.endpoint}/uploads/complete",
-            json_data=body.model_dump()
+            json_data=body.model_dump(),
         )
         return res.json()

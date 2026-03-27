@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import mimetypes
@@ -41,8 +42,7 @@ class YetterStream:
         self._sse_stream_url = f"{self._api_client.get_api_endpoint()}/{self._model}/requests/{self._request_id}/status/stream"
         self._event_source: Optional[httpx.AsyncClient] = None
         self._stream_ended = False
-        self._done_future = asyncio.Future()
-        self._final_response: Optional[Dict[str, Any]] = None
+        self._done_future = asyncio.get_running_loop().create_future()
         self._stream_task: Optional[asyncio.Task] = None
         self._stream_consumed = False
 
@@ -127,7 +127,7 @@ class YetterStream:
             elif self._initial_response.status in ["IN_QUEUE", "IN_PROGRESS"]:
                 self._stream_ended = False
 
-        self._event_source = self._api_client._get_http_client()
+        self._event_source = await self._api_client._get_http_client()
         try:
             headers = {
                 "Authorization": f"{self._api_client.api_key}",
@@ -213,10 +213,11 @@ class yetter:
     _cached_client: Optional[YetterImageClient] = None
 
     def __init__(self):
-        api_key = os.environ.get("YTR_API_KEY", "")
-        if "Bearer" in api_key or "Key" in api_key:
+        api_key = os.environ.get("YTR_API_KEY")
+        if api_key and ("Bearer" in api_key or "Key" in api_key):
             raise ValueError("API key must not contain 'Bearer' or 'Key'")
-        self._api_key = "Key " + api_key
+        self._api_key = f"Key {api_key}" if api_key else None
+        yetter._api_key = self._api_key
 
     @staticmethod
     def configure(
@@ -288,7 +289,7 @@ class yetter:
                 )
                 status = last_status_response.status
                 if on_queue_update and last_status_response:
-                    if asyncio.iscoroutinefunction(on_queue_update):
+                    if inspect.iscoroutinefunction(on_queue_update):
                         asyncio.create_task(on_queue_update(last_status_response))
                     else:
                         on_queue_update(last_status_response)

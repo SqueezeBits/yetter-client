@@ -20,6 +20,11 @@ dependencies = [
     "pydantic>=2.0,<3.0"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+
 [project.urls]
 homepage = "https://yetter.ai"
 repository = "https://github.com/SqueezeBits/yetter-client"
@@ -27,3 +32,10 @@ repository = "https://github.com/SqueezeBits/yetter-client"
 [tool.setuptools]
 packages = ["yetter"]
 package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "integration: exercises the live Yetter API and requires explicit opt-in",
+]

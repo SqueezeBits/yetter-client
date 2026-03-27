@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional, Callable
+
 from .api import YetterImageClient
 from .client import YetterStream, yetter
 from .types import (
@@ -23,27 +24,34 @@ from .types import (
 # Create the default instance
 _yetter_instance = yetter()
 
+
+def _ensure_configured(action: str) -> None:
+    if not yetter._api_key:
+        raise RuntimeError(f"You must call yetter.configure() before using yetter.{action}()")
+
+
 def configure(api_key: str = None, api_endpoint: str = None):
     global _yetter_instance
     _yetter_instance.configure(api_key=api_key, endpoint=api_endpoint)
 
+
 async def run(model: str, args: Dict[str, Any]) -> Dict[str, Any]:
-    global _yetter_instance
-    if not _yetter_instance._api_key:
-        raise RuntimeError("You must call yetter.configure() before using yetter.run()")
+    _ensure_configured("run")
     stream = await _yetter_instance.stream(model, args)
     return await stream.done()  # Wait for stream completion and return the final result
 
-async def subscribe(model: str, args: Dict[str, Any], on_queue_update: Optional[Callable[[GetStatusResponse], None]] = None) -> Dict[str, Any]:
-    global _yetter_instance
-    if not _yetter_instance._api_key:
-        raise RuntimeError("You must call yetter.configure() before using yetter.subscribe()")
+
+async def subscribe(
+    model: str,
+    args: Dict[str, Any],
+    on_queue_update: Optional[Callable[[GetStatusResponse], None]] = None,
+) -> Dict[str, Any]:
+    _ensure_configured("subscribe")
     return await _yetter_instance.subscribe(model, args, on_queue_update)
 
+
 async def stream(model: str, args: Dict[str, Any]) -> YetterStream:
-    global _yetter_instance
-    if not _yetter_instance._api_key:
-        raise RuntimeError("You must call yetter.configure() before using yetter.stream()")
+    _ensure_configured("stream")
     return await _yetter_instance.stream(model, args)
 
 
@@ -79,10 +87,8 @@ async def upload_file(
         print(f"Uploaded: {result.url}")
         ```
     """
-    global _yetter_instance
-    if not _yetter_instance._api_key:
-        raise RuntimeError("You must call yetter.configure() before using yetter.upload_file()")
-    return await yetter.upload_file(file_path, on_progress)
+    _ensure_configured("upload_file")
+    return await _yetter_instance.upload_file(file_path, on_progress)
 
 
 # Export everything needed for the public API
